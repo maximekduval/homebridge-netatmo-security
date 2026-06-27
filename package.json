@@ -1,25 +1,32 @@
 {
-  "displayName": "Homebridge Netatmo Security",
-  "name": "homebridge-netatmo-security",
-  "version": "1.2.2",
-  "description": "Extended support for Netatmo Security products",
+  "displayName": "Homebridge Netatmo Security MK",
+  "name": "homebridge-netatmo-security-mk",
+  "version": "1.0.0",
+  "description": "Extended HomeKit support for Netatmo Security products (door/window tags, siren). Fork of Anzure/homebridge-netatmo-security.",
+  "author": "maximekduval",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/maximekduval/homebridge-netatmo-security#readme",
   "repository": {
     "type": "git",
-    "url": "git://github.com/anzure/homebridge-netatmo-security.git"
+    "url": "git+https://github.com/maximekduval/homebridge-netatmo-security.git"
   },
   "bugs": {
-    "url": "https://github.com/anzure/homebridge-netatmo-security/issues"
+    "url": "https://github.com/maximekduval/homebridge-netatmo-security/issues"
   },
   "engines": {
     "node": ">=14.18.1",
     "homebridge": ">=1.3.5"
   },
   "main": "dist/index.js",
+  "files": [
+    "dist",
+    "config.schema.json"
+  ],
   "scripts": {
     "lint": "eslint src/**.ts --max-warnings=0",
     "watch": "npm run build && npm link && nodemon",
     "build": "rimraf ./dist && tsc",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run lint && npm run build"
   },
   "keywords": [

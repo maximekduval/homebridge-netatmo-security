@@ -18,7 +18,7 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
     public readonly api: API,
   ) {
     log.debug('Finished loading platform:', this.config.name);
-    this.netatmoAPI = new NetatmoAPI(log);
+    this.netatmoAPI = new NetatmoAPI(log, this.api.user.storagePath());
     log.debug('Finished initializing platform:', this.config.name);
     this.api.on('didFinishLaunching', () => {
       log.debug('Executed didFinishLaunching callback');
@@ -27,7 +27,9 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
         log.debug('Authenticated with provider:', this.config.name);
         this.discoverDevices();
         this.startRefreshTask();
-        log.debug('Config loaded: ' + JSON.stringify({...config, password: '******', client_secret: '********'}));
+        log.debug('Config loaded: ' + JSON.stringify({...config, refresh_token: '******', client_secret: '********'}));
+      }).catch((error) => {
+        log.error('Netatmo authentication failed, plugin disabled until restart: ' + (error?.message ?? error));
       });
     });
   }

@@ -41,34 +41,13 @@
         },
         "description": "Secure client secret by hiding it"
       },
-      "username": {
-        "title": "Username",
+      "refresh_token": {
+        "title": "Refresh Token",
         "type": "string",
         "required": true,
         "default": "",
-        "placeholder": "Enter your Netatmo username",
-        "description": "Email or username for Netatmo login"
-      },
-      "password": {
-        "title": "Password",
-        "type": "string",
-        "required": true,
-        "default": "",
-        "condition": {
-          "functionBody": "return model.hide_password === false || model.password.length <= 0;"
-        },
-        "placeholder": "************",
-        "description": "Password used for Netatmo login"
-      },
-      "hide_password": {
-        "title": "Hide Password?",
-        "type": "boolean",
-        "default": false,
-        "required": true,
-        "condition": {
-          "functionBody": "return model.password != null && model.password.length > 0;"
-        },
-        "description": "Secure user password by hiding it"
+        "placeholder": "Generated refresh token from dev.netatmo.com",
+        "description": "OAuth2 refresh token. Netatmo no longer supports password login: generate this with the token generator on your app at dev.netatmo.com (scope read_camera, plus write_camera for siren control). Used only on first start — the plugin then rotates and persists it automatically."
       },
       "webhook_scheme": {
         "title": "Webhook Scheme",
