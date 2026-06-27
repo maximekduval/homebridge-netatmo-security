@@ -1,5 +1,4 @@
 import axios from 'axios';
-import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
 
@@ -70,16 +69,19 @@ export default class NetatmoAPI {
     if (!this.refreshToken) {
       throw new Error('Missing refresh token; cannot authenticate.');
     }
-    const form = new FormData();
-    form.append('grant_type', 'refresh_token');
-    form.append('refresh_token', this.refreshToken);
-    form.append('client_id', this.config.client_id);
-    form.append('client_secret', this.config.client_secret);
+    // Netatmo's token endpoint expects application/x-www-form-urlencoded, NOT
+    // multipart/form-data — sending multipart makes it reject the request with
+    // {"error":"invalid_client"}.
+    const params = new URLSearchParams();
+    params.append('grant_type', 'refresh_token');
+    params.append('refresh_token', this.refreshToken);
+    params.append('client_id', this.config.client_id);
+    params.append('client_secret', this.config.client_secret);
 
     let response;
     try {
-      response = await axios.post('https://api.netatmo.com/oauth2/token', form, {
-        headers: { ...form.getHeaders() },
+      response = await axios.post('https://api.netatmo.com/oauth2/token', params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
     } catch (error) {
       const detail = error.response ? JSON.stringify(error.response.data) : error.message;
