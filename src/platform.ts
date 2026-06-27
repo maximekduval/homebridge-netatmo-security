@@ -3,7 +3,6 @@ import { API, DynamicPlatformPlugin, PlatformAccessory, Logger, PlatformConfig, 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { TagSensorAccessory } from './accessory/tagSensorAccessory';
 import NetatmoAPI from './util/NetatmoAPI';
-import { IndoorSirenAccessory } from './accessory/indoorSirenAccessory';
 
 // Each accessory exposes update(device): the platform owns the single poll loop
 // and pushes fresh device data to accessories, instead of every accessory polling
@@ -12,7 +11,10 @@ export interface NetatmoAccessory {
   update(device: any): void;
 }
 
-const SUPPORTED_TYPES = ['NACamDoorTag', 'NIS'];
+// The indoor siren (NIS) is intentionally not supported: Netatmo's API rejects
+// any state-setting property for it (error 21), so it can't be triggered from
+// HomeKit, and we don't expose an uncontrollable accessory.
+const SUPPORTED_TYPES = ['NACamDoorTag'];
 // homesdata is cached after first fetch (see NetatmoAPI.getHomeData), so each
 // poll costs 2 API calls (homestatus + getevents). At 15s that's ~480 req/h,
 // just under Netatmo's ~500 req/h per-user limit. Don't go below 15s without
@@ -46,6 +48,8 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   }
 
   // Restore a cached accessory: build its handler so the platform can push updates.
+  // Accessories whose type is no longer supported (e.g. a previously added siren)
+  // are unregistered so they don't linger as orphans in HomeKit.
   configureAccessory(accessory: PlatformAccessory) {
     const handler = this.createHandler(accessory);
     if (handler) {
@@ -53,14 +57,13 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
       this.handlers.set(accessory.UUID, handler);
       this.accessories.push(accessory);
     } else {
-      this.log.debug('Device type not supported: ' + accessory.context.device?.type);
+      this.log.info('Removing unsupported cached accessory: ' + accessory.displayName);
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
     }
   }
 
   private createHandler(accessory: PlatformAccessory): NetatmoAccessory | undefined {
     switch (accessory.context.device?.type) {
-      case 'NIS':
-        return new IndoorSirenAccessory(this, accessory);
       case 'NACamDoorTag':
         return new TagSensorAccessory(this, accessory);
       default:
