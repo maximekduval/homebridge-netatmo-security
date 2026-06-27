@@ -30,6 +30,10 @@ export class IndoorSirenAccessory implements NetatmoAccessory {
     || this.accessory.addService(this.platform.Service.Switch);
     this.service.setCharacteristic(this.platform.Characteristic.Name, this.device.name);
 
+    // No dedicated "siren" service exists in HAP; a Switch is the recommended type.
+    // Set the accessory category to Security System for a more fitting Home app icon.
+    this.accessory.category = this.platform.api.hap.Categories.SECURITY_SYSTEM;
+
     this.sounding = this.isSounding(this.device);
     this.service.getCharacteristic(this.platform.Characteristic.On)
       .onGet(() => this.sounding)
