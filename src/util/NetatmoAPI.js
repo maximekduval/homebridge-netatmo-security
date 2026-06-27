@@ -131,9 +131,10 @@ export default class NetatmoAPI {
   // no-op on some models).
   async setSirenStatus(device, sounding) {
     await this.ensureAuth();
+    // The indoor siren rejects `siren_status` (error 21) — it uses `status`.
     const moduleBody = {
       id: device.id,
-      siren_status: sounding ? 'sound' : 'no_sound',
+      status: sounding ? 'sound' : 'no_sound',
     };
     if (device.bridge) {
       moduleBody.bridge = device.bridge;
