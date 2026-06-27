@@ -148,6 +148,15 @@ export default class NetatmoAPI {
     const response = await this.client().get('/getevents?home_id=' + homeId);
     const data = response.data.body.home;
     const events = data.events;
+    // TEMP diagnostic: log recent event types so we can map vibration vs open/close.
+    // Remove once the event-type mapping is implemented.
+    const recent = (new Date().getTime() / 1000) - 120;
+    const sample = (events || [])
+      .filter((e) => e.time > recent)
+      .map((e) => ({ type: e.type, module_id: e.module_id, time: e.time }));
+    if (sample.length > 0) {
+      this.log.info('[event-types] ' + JSON.stringify(sample));
+    }
     return events;
   }
 

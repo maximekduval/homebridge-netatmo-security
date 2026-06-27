@@ -1,82 +1,84 @@
 /* eslint-disable max-len */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
-import { NetatmoSecurityPlatform } from '../platform';
+import { NetatmoSecurityPlatform, NetatmoAccessory } from '../platform';
 
-export class TagSensorAccessory {
+export class TagSensorAccessory implements NetatmoAccessory {
   private service: Service;
+  private device: any;
   private state = {
     SensorStatus: 'unknown',
     TamperStatus: 0,
   };
 
-  // Load device
   constructor(
     private readonly platform: NetatmoSecurityPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+    this.device = accessory.context.device;
+
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Netatmo-Security')
       .setCharacteristic(this.platform.Characteristic.Model, 'Tag-Sensor')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.accessory.context.device.id);
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.id);
 
     this.service = this.accessory.getService(this.platform.Service.ContactSensor)
     || this.accessory.addService(this.platform.Service.ContactSensor);
 
-    this.service.setCharacteristic(this.platform.Characteristic.Name, this.accessory.context.device.name);
+    this.service.setCharacteristic(this.platform.Characteristic.Name, this.device.name);
 
     this.service.getCharacteristic(this.platform.Characteristic.ContactSensorState)
       .onGet(this.isOpen.bind(this));
 
     this.service.getCharacteristic(this.platform.Characteristic.StatusTampered)
       .onGet(this.isTampered.bind(this));
+  }
 
-    setInterval(() => {
-      try {
-        const contactDetected = this.accessory.context.device.status === 'open';
+  // Push fresh device data from the platform's single poll loop.
+  update(device: any) {
+    this.device = device;
+    const C = this.platform.Characteristic;
 
-        if (this.accessory.context.device.status !== this.state.SensorStatus) {
-          this.platform.log.info(accessory.displayName + ' Sensor Status: ' + contactDetected + ' (' + this.state.SensorStatus + ' -> ' + this.accessory.context.device.status + ')');
-        }
-
-        this.state.SensorStatus = this.accessory.context.device.status;
-        this.service.updateCharacteristic(this.platform.Characteristic.ContactSensorState, contactDetected);
-
-      } catch (error) {
-        this.platform.log.error('Failed to update contact sensor status', error);
+    try {
+      const open = device.status === 'open';
+      if (device.status !== this.state.SensorStatus) {
+        this.platform.log.info(`${this.accessory.displayName} Sensor Status: ${open} (${this.state.SensorStatus} -> ${device.status})`);
       }
+      this.state.SensorStatus = device.status;
+      this.service.updateCharacteristic(C.ContactSensorState, this.contactState());
+    } catch (error) {
+      this.platform.log.error('Failed to update contact sensor status', error);
+    }
 
-      try {
-        const timeTampered = this.accessory.context.device.activity ? this.accessory.context.device.activity : 0;
-        const minimumTime = (new Date().getTime() / 1000) - 90;
-        const tamperingDetected = timeTampered > this.state.TamperStatus || timeTampered > minimumTime;
-
-        if (this.accessory.context.device.activity !== this.state.TamperStatus) {
-          this.platform.log.info(accessory.displayName + ' Tampered Status: ' + tamperingDetected + ' (' + this.state.TamperStatus + ' -> ' + this.accessory.context.device.activity + ')');
-        } else if (tamperingDetected === true) {
-          this.platform.log.debug(accessory.displayName + ' Tampered Status: ' + tamperingDetected + ' (' + this.state.TamperStatus + ' -> ' + this.accessory.context.device.activity + ')');
-        }
-
-        this.state.TamperStatus = this.accessory.context.device.activity;
-        this.service.updateCharacteristic(this.platform.Characteristic.StatusTampered, tamperingDetected);
-
-      } catch (error) {
-        this.platform.log.error('Failed to update tampered sensor status', error);
+    try {
+      const activity = device.activity || 0;
+      const tampered = this.isRecentActivity(activity);
+      if (activity !== this.state.TamperStatus) {
+        this.platform.log.info(`${this.accessory.displayName} Tampered Status: ${tampered} (${this.state.TamperStatus} -> ${activity})`);
       }
-    }, 5000);
+      this.state.TamperStatus = activity;
+      this.service.updateCharacteristic(C.StatusTampered, tampered);
+    } catch (error) {
+      this.platform.log.error('Failed to update tampered sensor status', error);
+    }
+  }
+
+  private contactState(): CharacteristicValue {
+    const C = this.platform.Characteristic.ContactSensorState;
+    return this.device?.status === 'open' ? C.CONTACT_NOT_DETECTED : C.CONTACT_DETECTED;
+  }
+
+  private isRecentActivity(activity: number): boolean {
+    const minimumTime = (new Date().getTime() / 1000) - 90;
+    return activity > minimumTime;
   }
 
   async isTampered(): Promise<CharacteristicValue> {
-    const minimumTime = (new Date().getTime() / 1000) - 90;
-    const isTampered = this.state.TamperStatus > minimumTime || this.accessory.context.device.activity > minimumTime;
-    this.platform.log.debug(this.accessory.displayName + ' Tampered Characteristic: ' + isTampered + ' (' + this.state.TamperStatus + ' / ' + this.accessory.context.device.activity + ')');
-    return isTampered;
+    return this.isRecentActivity(this.device?.activity || 0);
   }
 
   async isOpen(): Promise<CharacteristicValue> {
-    const isOpen = this.state.SensorStatus === 'open' || this.accessory.context.device.status === 'open';
-    this.platform.log.debug(this.accessory.displayName + ' Sensor Characteristic: ' + isOpen + ' (' + this.state.SensorStatus + ' / ' + this.accessory.context.device.status + ')');
-    return isOpen;
+    return this.contactState();
   }
 
 }
