@@ -149,15 +149,6 @@ export default class NetatmoAPI {
     const response = await this.client().get('/getevents?home_id=' + homeId);
     const data = response.data.body.home;
     const events = data.events;
-    // TEMP diagnostic: log recent event types so we can map vibration vs open/close.
-    // Remove once the event-type mapping is implemented.
-    const recent = (new Date().getTime() / 1000) - 120;
-    const sample = (events || [])
-      .filter((e) => e.time > recent)
-      .map((e) => ({ type: e.type, module_id: e.module_id, time: e.time }));
-    if (sample.length > 0) {
-      this.log.info('[event-types] ' + JSON.stringify(sample));
-    }
     return events;
   }
 
@@ -194,16 +185,20 @@ export default class NetatmoAPI {
     const devices = [];
     home.modules.map((moduleInfo) => {
       const moduleStatus = status.modules.find((module) => moduleInfo.id === module.id);
-      const minimumTime = (new Date().getTime() / 1000) - 90;
-      const moduleEvents = events.filter((event) => moduleInfo.id === event.module_id && event.time > minimumTime);
-      const lastActivity = moduleEvents.length > 0 ? Math.max.apply(Math, moduleEvents.map((event) => event.time)) : 0;
+      const moduleEvents = events.filter((event) => moduleInfo.id === event.module_id);
+      const lastEventTime = (type) => {
+        const matching = moduleEvents.filter((event) => event.type === type);
+        return matching.length > 0 ? Math.max.apply(Math, matching.map((event) => event.time)) : 0;
+      };
       const device = { ...moduleStatus,
         name: moduleInfo.name,
         category: moduleInfo.category,
         setup_date: moduleInfo.setup_date,
         room_id: moduleInfo.room_id,
         home_id: home.id,
-        activity: lastActivity,
+        // tag_small_move = a light vibration/tap without opening (someone knocking);
+        // tag_big_move accompanies a normal open/close, so we don't surface it.
+        lastSmallMove: lastEventTime('tag_small_move'),
       };
       devices.push(device);
     });
