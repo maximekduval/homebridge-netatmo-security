@@ -44,6 +44,11 @@ export class TagSensorAccessory implements NetatmoAccessory {
     this.motionService.setCharacteristic(this.platform.Characteristic.Name, this.device.name + ' Vibration');
     this.motionService.getCharacteristic(this.platform.Characteristic.MotionDetected)
       .onGet(() => this.motionDetected);
+
+    // Present the two services as one cohesive accessory: the door contact is the
+    // primary function, the vibration motion sensor is linked to it.
+    this.contactService.setPrimaryService(true);
+    this.contactService.addLinkedService(this.motionService);
   }
 
   // Push fresh device data from the platform's single poll loop.
