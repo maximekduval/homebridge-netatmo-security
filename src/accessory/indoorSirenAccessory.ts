@@ -61,7 +61,11 @@ export class IndoorSirenAccessory implements NetatmoAccessory {
       await this.platform.netatmoAPI.setSirenStatus(this.device, sounding);
       this.sounding = sounding;
     } catch (error) {
-      this.platform.log.error(`Failed to ${sounding ? 'trigger' : 'silence'} siren: ` + ((error as any)?.message ?? error));
+      const e = error as any;
+      // Surface Netatmo's actual error body (e.g. invalid params / missing bridge)
+      // so a 400 tells us exactly what to fix.
+      const detail = e?.response?.data ? JSON.stringify(e.response.data) : (e?.message ?? error);
+      this.platform.log.error(`Failed to ${sounding ? 'trigger' : 'silence'} siren: ` + detail);
       // Revert the switch so the UI reflects that the command did not apply.
       setTimeout(() => this.service.updateCharacteristic(this.platform.Characteristic.On, this.sounding), 500);
     }

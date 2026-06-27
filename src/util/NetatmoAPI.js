@@ -196,6 +196,9 @@ export default class NetatmoAPI {
         category: moduleInfo.category,
         setup_date: moduleInfo.setup_date,
         room_id: moduleInfo.room_id,
+        // bridge = the gateway/camera the module is attached to; setstate needs it
+        // for bridged modules (e.g. the siren).
+        bridge: moduleInfo.bridge ?? moduleStatus?.bridge,
         home_id: home.id,
         // tag_small_move = a light vibration/tap without opening (someone knocking);
         // tag_big_move accompanies a normal open/close, so we don't surface it.
