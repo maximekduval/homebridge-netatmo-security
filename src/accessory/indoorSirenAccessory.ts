@@ -6,9 +6,7 @@ import { NetatmoSecurityPlatform, NetatmoAccessory } from '../platform';
 export class IndoorSirenAccessory implements NetatmoAccessory {
   private service: Service;
   private device: any;
-  private state = {
-    SoundStatus: 'no_sound',
-  };
+  private sounding = false;
 
   constructor(
     private readonly platform: NetatmoSecurityPlatform,
@@ -21,32 +19,55 @@ export class IndoorSirenAccessory implements NetatmoAccessory {
       .setCharacteristic(this.platform.Characteristic.Model, 'Indoor-Siren')
       .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.id);
 
-    this.service = this.accessory.getService(this.platform.Service.Speaker)
-    || this.accessory.addService(this.platform.Service.Speaker);
+    // The original Speaker/Mute mapping shows as "unsupported" in the Home app.
+    // A Switch is the supported, controllable representation for a siren.
+    const stale = this.accessory.getService(this.platform.Service.Speaker);
+    if (stale) {
+      this.accessory.removeService(stale);
+    }
 
+    this.service = this.accessory.getService(this.platform.Service.Switch)
+    || this.accessory.addService(this.platform.Service.Switch);
     this.service.setCharacteristic(this.platform.Characteristic.Name, this.device.name);
 
-    this.service.getCharacteristic(this.platform.Characteristic.Mute)
-      .onGet(this.isMuted.bind(this));
+    this.sounding = this.isSounding(this.device);
+    this.service.getCharacteristic(this.platform.Characteristic.On)
+      .onGet(() => this.sounding)
+      .onSet(this.setOn.bind(this));
   }
 
   // Push fresh device data from the platform's single poll loop.
   update(device: any) {
     this.device = device;
     try {
-      const soundDetected = device.status !== 'no_sound';
-      if (device.status !== this.state.SoundStatus) {
-        this.platform.log.info(`${this.accessory.displayName} Sound Status: ${soundDetected} (${this.state.SoundStatus} -> ${device.status})`);
+      const sounding = this.isSounding(device);
+      if (sounding !== this.sounding) {
+        this.platform.log.info(`${this.accessory.displayName} Siren: ${sounding ? 'sounding' : 'silent'}`);
       }
-      this.state.SoundStatus = device.status;
-      this.service.updateCharacteristic(this.platform.Characteristic.Mute, !soundDetected);
+      this.sounding = sounding;
+      this.service.updateCharacteristic(this.platform.Characteristic.On, sounding);
     } catch (error) {
-      this.platform.log.error('Failed to update siren sound status', error);
+      this.platform.log.error('Failed to update siren status', error);
     }
   }
 
-  async isMuted(): Promise<CharacteristicValue> {
-    return this.device?.status === 'no_sound';
+  private async setOn(value: CharacteristicValue) {
+    const sounding = value === true;
+    try {
+      await this.platform.netatmoAPI.setSirenStatus(this.device, sounding);
+      this.sounding = sounding;
+    } catch (error) {
+      this.platform.log.error(`Failed to ${sounding ? 'trigger' : 'silence'} siren: ` + ((error as any)?.message ?? error));
+      // Revert the switch so the UI reflects that the command did not apply.
+      setTimeout(() => this.service.updateCharacteristic(this.platform.Characteristic.On, this.sounding), 500);
+    }
+  }
+
+  // 'no_sound' (or missing) = silent; any other status = sounding. Some models
+  // report this under siren_status, others under status.
+  private isSounding(device: any): boolean {
+    const raw = device?.siren_status ?? device?.status;
+    return raw != null && raw !== 'no_sound';
   }
 
 }

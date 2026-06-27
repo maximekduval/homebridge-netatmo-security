@@ -125,23 +125,24 @@ export default class NetatmoAPI {
     });
   }
 
-  async setState(device, status) {
+  // Trigger / silence a siren via /setstate. Netatmo uses the `siren_status`
+  // field with values 'sound' / 'no_sound' (confirmed for the outdoor camera
+  // siren; the indoor siren API is not officially documented, so this may be a
+  // no-op on some models).
+  async setSirenStatus(device, sounding) {
     await this.ensureAuth();
-    const body = { home: {
-      id: device.home_id,
-      modules: [
-        {
-          id: device.id,
-          status: status,
-          bridge: device.bridge,
-        },
-      ],
-    }};
-    this.log.debug('Set State request: ' + JSON.stringify(body));
+    const moduleBody = {
+      id: device.id,
+      siren_status: sounding ? 'sound' : 'no_sound',
+    };
+    if (device.bridge) {
+      moduleBody.bridge = device.bridge;
+    }
+    const body = { home: { id: device.home_id, modules: [moduleBody] } };
+    this.log.debug('Set siren request: ' + JSON.stringify(body));
     const response = await this.client().post('/setstate', body);
-    const data = response.data;
-    this.log.debug('Set State response: ' + JSON.stringify(response.data));
-    return data;
+    this.log.debug('Set siren response: ' + JSON.stringify(response.data));
+    return response.data;
   }
 
   async getEvents(homeId) {
