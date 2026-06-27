@@ -17,6 +17,7 @@ export default class NetatmoAPI {
   refreshToken = null;
   tokenExpire = 0;
   _authPromise = null;
+  homeStructure = null;
 
   constructor(logger, storagePath) {
     this.log = logger;
@@ -160,11 +161,21 @@ export default class NetatmoAPI {
     return events;
   }
 
-  async getHomeData() {
+  // The home structure (device list, names, types) is essentially static, so we
+  // fetch /homesdata once and cache it. This keeps the poll loop down to 2 API
+  // calls (homestatus + getevents) instead of 3, leaving room for a faster poll.
+  async getHomeData(force = false) {
+    if (this.homeStructure && !force) {
+      return this.homeStructure;
+    }
     await this.ensureAuth();
     const response = await this.client().get('/homesdata');
     const data = response.data.body;
-    const home = data.homes[0];
+    const home = data.homes && data.homes[0];
+    if (!home) {
+      throw new Error('No Netatmo home found for this account.');
+    }
+    this.homeStructure = home;
     return home;
   }
 

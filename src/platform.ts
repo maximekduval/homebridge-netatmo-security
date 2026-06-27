@@ -13,7 +13,11 @@ export interface NetatmoAccessory {
 }
 
 const SUPPORTED_TYPES = ['NACamDoorTag', 'NIS'];
-const POLL_INTERVAL_MS = 30000;
+// homesdata is cached after first fetch (see NetatmoAPI.getHomeData), so each
+// poll costs 2 API calls (homestatus + getevents). At 15s that's ~480 req/h,
+// just under Netatmo's ~500 req/h per-user limit. Don't go below 15s without
+// also reducing calls per poll.
+const POLL_INTERVAL_MS = 15000;
 
 export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
