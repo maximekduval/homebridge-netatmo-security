@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Netatmo Security MK",
   "name": "homebridge-netatmo-security-mk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Extended HomeKit support for Netatmo Security products (door/window tags, siren). Fork of Anzure/homebridge-netatmo-security.",
   "author": "maximekduval",
   "license": "Apache-2.0",
