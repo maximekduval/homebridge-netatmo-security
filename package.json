@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Netatmo Security MK",
   "name": "homebridge-netatmo-security-mk",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "HomeKit support for Netatmo Smart Door/Window Sensors (Tags): contact + vibration. Fork of Anzure/homebridge-netatmo-security.",
   "author": "maximekduval",
   "license": "Apache-2.0",
