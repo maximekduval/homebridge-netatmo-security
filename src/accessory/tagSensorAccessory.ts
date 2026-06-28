@@ -41,6 +41,9 @@ export class TagSensorAccessory implements NetatmoAccessory {
   private reachable: boolean | undefined;
   private batteryLow: boolean | undefined;
   private batteryShapeWarned = false;
+  // Log the raw battery-related fields once per accessory at startup, so the
+  // actual Netatmo payload is visible without enabling global Homebridge debug.
+  private batteryDiagLogged = false;
   // Last tag_small_move timestamp we've already reacted to. Initialized on the
   // first update so a stale event in the backlog doesn't fire a vibration alert
   // right after a restart.
@@ -153,6 +156,17 @@ export class TagSensorAccessory implements NetatmoAccessory {
   private updateBattery(device: any) {
     const C = this.platform.Characteristic;
     const battery = this.readBattery(device);
+
+    // One-shot visibility into what Netatmo actually sends for this tag: dump
+    // every battery-ish key with its raw value, plus what we end up reporting.
+    if (!this.batteryDiagLogged) {
+      this.batteryDiagLogged = true;
+      const raw = Object.keys(device || {})
+        .filter((key) => /batt/i.test(key))
+        .map((key) => `${key}=${JSON.stringify(device[key])}`)
+        .join(', ');
+      this.platform.log.info(`${this.accessory.displayName} battery payload: {${raw || 'no battery field'}} -> reported ${battery.percent ?? 'n/a'}% (low=${battery.low})`);
+    }
     const low = battery.low ? C.StatusLowBattery.BATTERY_LEVEL_LOW : C.StatusLowBattery.BATTERY_LEVEL_NORMAL;
     if (battery.percent !== undefined) {
       this.batteryService.updateCharacteristic(C.BatteryLevel, battery.percent);
