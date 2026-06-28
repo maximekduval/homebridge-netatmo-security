@@ -16,8 +16,19 @@ const REACHABLE_STATUSES = new Set(['open', 'closed']);
 // Battery percentage at or below which we flag StatusLowBattery.
 const LOW_BATTERY_PERCENT = 20;
 
-// Netatmo only exposes a coarse battery_state enum on some modules; map it to a
-// representative percentage so HomeKit can still show a level and a low warning.
+// Door tags report battery_level as a raw voltage in millivolts. We map it
+// linearly to a percentage between these bounds (observed range on NACamDoorTag
+// is ~4160 mV at very_low to ~5780 mV at full), which is far more granular and
+// honest than the coarse battery_state enum (where "full" stays pinned at 100%).
+const BATTERY_MV_EMPTY = 4000;
+const BATTERY_MV_FULL = 6000;
+
+// Netatmo's own coarse assessment; treat these as low regardless of the computed
+// percentage so we never miss a low-battery warning.
+const LOW_BATTERY_STATES = new Set(['low', 'very_low']);
+
+// Last-resort mapping when only the coarse battery_state enum is available (no
+// percentage and no millivolt level).
 const BATTERY_STATE_PERCENT: Record<string, number> = {
   full: 100,
   high: 80,
@@ -185,16 +196,24 @@ export class TagSensorAccessory implements NetatmoAccessory {
   }
 
   // Netatmo isn't consistent about how it reports battery across modules, so try
-  // the known shapes in order: percentage, then the coarse state enum. If none
-  // is present, warn once with the available keys so the mapping can be extended.
+  // the known shapes in richest-first order: explicit percentage, then the raw
+  // millivolt level (door tags), then the coarse state enum. The state enum,
+  // when present, also forces a low flag regardless of the computed percentage.
+  // If nothing is recognized, warn once with the available keys.
   private readBattery(device: any): { percent?: number; low: boolean } {
+    const state = typeof device?.battery_state === 'string' ? device.battery_state : undefined;
+    const lowByState = state !== undefined && LOW_BATTERY_STATES.has(state);
+
     if (typeof device?.battery_percent === 'number') {
-      return { percent: device.battery_percent, low: device.battery_percent <= LOW_BATTERY_PERCENT };
+      return { percent: device.battery_percent, low: lowByState || device.battery_percent <= LOW_BATTERY_PERCENT };
     }
-    if (typeof device?.battery_state === 'string') {
-      const percent = BATTERY_STATE_PERCENT[device.battery_state];
-      const low = device.battery_state === 'low' || device.battery_state === 'very_low';
-      return { percent, low };
+    if (typeof device?.battery_level === 'number') {
+      const ratio = (device.battery_level - BATTERY_MV_EMPTY) / (BATTERY_MV_FULL - BATTERY_MV_EMPTY);
+      const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+      return { percent, low: lowByState || percent <= LOW_BATTERY_PERCENT };
+    }
+    if (state !== undefined) {
+      return { percent: BATTERY_STATE_PERCENT[state], low: lowByState };
     }
     if (!this.batteryShapeWarned) {
       this.batteryShapeWarned = true;
