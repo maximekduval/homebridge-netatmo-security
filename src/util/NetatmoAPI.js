@@ -175,6 +175,19 @@ export default class NetatmoAPI {
     const response = await this.client().get('/homestatus?home_id=' + homeId);
     const data = response.data.body;
     const status = data.home;
+    if (!status) {
+      throw new Error('Netatmo homestatus response missing "home" data.');
+    }
+    // During backend instability Netatmo sometimes omits `modules` entirely and
+    // only returns `errors` for the modules it couldn't reach. Normalize to an
+    // empty array so callers can treat those modules as unreachable instead of
+    // crashing on a missing array.
+    if (!Array.isArray(status.modules)) {
+      if (Array.isArray(status.errors) && status.errors.length > 0) {
+        this.log.warn('Netatmo homestatus reported errors for all modules: ' + JSON.stringify(status.errors));
+      }
+      status.modules = [];
+    }
     return status;
   }
 
