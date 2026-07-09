@@ -27,6 +27,10 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   public readonly accessories: PlatformAccessory[] = [];
   private readonly handlers = new Map<string, NetatmoAccessory>();
   public netatmoAPI: NetatmoAPI;
+  // Netatmo's cloud API can go flaky for extended periods (bursts of 503s). Logging
+  // every failed 15s poll during those spells drowns the logs, so only the first
+  // failure and every 20th thereafter (~5 min) are logged, plus the eventual recovery.
+  private consecutiveFailures = 0;
 
   constructor(
     public readonly log: Logger,
@@ -108,8 +112,17 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
 
   startRefreshTask() {
     setInterval(() => {
-      this.pollDevices().catch((error) => {
-        this.log.error('Failed to refresh status: ' + (error?.message ?? error));
+      this.pollDevices().then(() => {
+        if (this.consecutiveFailures > 0) {
+          this.log.info(`Netatmo status refresh recovered after ${this.consecutiveFailures} failed attempt(s).`);
+          this.consecutiveFailures = 0;
+        }
+      }).catch((error) => {
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures === 1 || this.consecutiveFailures % 20 === 0) {
+          this.log.error(`Failed to refresh status (${this.consecutiveFailures} consecutive failures): `
+            + (error?.message ?? error));
+        }
       });
     }, POLL_INTERVAL_MS);
   }
