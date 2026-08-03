@@ -15,7 +15,7 @@ Exposes **Netatmo Smart Door/Window Sensors (Tags)** in Apple HomeKit. Each tag 
 This is a personal fork of [Anzure/homebridge-netatmo-security](https://github.com/Anzure/homebridge-netatmo-security) (Apache-2.0), published under the `-mk` name. The main differences versus upstream:
 
 - **OAuth2 refresh-token authentication** (Netatmo removed password login), with on-disk token persistence and rotation.
-- A single, centralized poll loop (15 s) with `homesdata` cached, to stay well under Netatmo's API rate limit.
+- A single, centralized poll loop (20 s, configurable) with `homesdata` cached and exponential backoff on errors, to stay well under Netatmo's API rate limit.
 - Door tags exposed as Contact + Vibration; dead code removed.
 
 ### Not supported (on purpose)
@@ -53,7 +53,9 @@ Fill in **Client ID**, **Client Secret** and **Refresh Token** in the plugin set
 Restart Homebridge after setting up or making changes.
 
 ## Notes
-- Door state and vibration are polled every 15 seconds; expect up to ~15 s of latency (Netatmo offers no public push/webhook for these without exposing your bridge to the internet).
+- Door state and vibration are polled every 20 seconds by default; expect up to ~20 s of latency (Netatmo offers no public push/webhook for these without exposing your bridge to the internet). The interval is configurable (**Poll Interval**, 15–300 s).
+- Each poll costs 2 Netatmo API calls and the account budget is roughly 500 calls/hour, so 20 s (~360/h) keeps a margin. If the logs show repeated `429`/`503` (`Netatmo error 26: User usage reached`), the account is over quota — raise the poll interval, and check whether another integration (Home Assistant, another bridge) polls the same Netatmo account.
+- When Netatmo returns errors the plugin backs off exponentially (up to 5 min) instead of hammering the API, and logs at most one line per 5 minutes for the duration of the outage.
 - The "Vibration" motion sensor pulses for a few seconds on each detected tap so HomeKit reliably fires its notification.
 
 ## Credits

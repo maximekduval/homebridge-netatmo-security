@@ -3,6 +3,33 @@ import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
 
+// No Netatmo call should be allowed to hang: without a timeout a stalled request
+// keeps a poll (and its slot in the rate-limit budget) alive indefinitely.
+const REQUEST_TIMEOUT_MS = 10000;
+
+// Turn an axios failure into something actionable. Netatmo answers 429/503 both
+// for genuine outages and for quota bans, and only the response body tells them
+// apart (e.g. {"error":{"code":26,"message":"User usage reached"}}), so the body
+// must make it into the message we log.
+function describeError(error) {
+  const status = error?.response?.status;
+  const body = error?.response?.data;
+  const netatmo = body?.error;
+  const parts = [];
+  if (status) {
+    parts.push('HTTP ' + status);
+  }
+  if (netatmo) {
+    parts.push('Netatmo ' + (netatmo.code !== undefined ? 'error ' + netatmo.code + ': ' : '') + (netatmo.message ?? JSON.stringify(netatmo)));
+  } else if (body !== undefined && body !== '') {
+    parts.push(typeof body === 'string' ? body.slice(0, 200) : JSON.stringify(body).slice(0, 200));
+  }
+  if (parts.length === 0) {
+    parts.push(error?.message ?? String(error));
+  }
+  return parts.join(' — ');
+}
+
 // Netatmo deprecated the password grant (Resource Owner Password Credentials),
 // so we authenticate exclusively with the OAuth2 refresh-token flow:
 //  - the user generates a refresh token once on dev.netatmo.com and sets it in
@@ -81,10 +108,10 @@ export default class NetatmoAPI {
     try {
       response = await axios.post('https://api.netatmo.com/oauth2/token', form, {
         headers: { ...form.getHeaders() },
+        timeout: REQUEST_TIMEOUT_MS,
       });
     } catch (error) {
-      const detail = error.response ? JSON.stringify(error.response.data) : error.message;
-      this.log.error('Netatmo authentication failed: ' + detail);
+      this.log.error('Netatmo authentication failed: ' + describeError(error));
       throw error;
     }
 
@@ -121,8 +148,30 @@ export default class NetatmoAPI {
     return axios.create({
       baseURL: 'https://api.netatmo.com/api/',
       responseType: 'json',
+      timeout: REQUEST_TIMEOUT_MS,
       headers: { Authorization: `Bearer ${this.accessToken}` },
     });
+  }
+
+  // Run an API call, replacing axios' opaque "Request failed with status code 503"
+  // with the endpoint name and Netatmo's own error payload. A 401 means the access
+  // token was invalidated server-side before its stated expiry, so drop it and let
+  // the next ensureAuth() re-authenticate. 403/429 are *not* treated that way: they
+  // are quota bans, and re-authenticating on those would only burn more quota.
+  async request(label, call) {
+    try {
+      return await call();
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        this.log.debug('Access token rejected (401); forcing re-authentication on next call.');
+        this.accessToken = null;
+        this.tokenExpire = 0;
+      }
+      const wrapped = new Error(label + ': ' + describeError(error));
+      wrapped.status = error?.response?.status;
+      wrapped.cause = error;
+      throw wrapped;
+    }
   }
 
   async setState(device, status) {
@@ -138,7 +187,7 @@ export default class NetatmoAPI {
       ],
     }};
     this.log.debug('Set State request: ' + JSON.stringify(body));
-    const response = await this.client().post('/setstate', body);
+    const response = await this.request('setstate', () => this.client().post('/setstate', body));
     const data = response.data;
     this.log.debug('Set State response: ' + JSON.stringify(response.data));
     return data;
@@ -146,7 +195,7 @@ export default class NetatmoAPI {
 
   async getEvents(homeId) {
     await this.ensureAuth();
-    const response = await this.client().get('/getevents?home_id=' + homeId);
+    const response = await this.request('getevents', () => this.client().get('/getevents?home_id=' + homeId));
     const data = response.data.body.home;
     const events = data.events;
     return events;
@@ -160,7 +209,7 @@ export default class NetatmoAPI {
       return this.homeStructure;
     }
     await this.ensureAuth();
-    const response = await this.client().get('/homesdata');
+    const response = await this.request('homesdata', () => this.client().get('/homesdata'));
     const data = response.data.body;
     const home = data.homes && data.homes[0];
     if (!home) {
@@ -172,7 +221,7 @@ export default class NetatmoAPI {
 
   async getHomeStatus(homeId) {
     await this.ensureAuth();
-    const response = await this.client().get('/homestatus?home_id=' + homeId);
+    const response = await this.request('homestatus', () => this.client().get('/homestatus?home_id=' + homeId));
     const data = response.data.body;
     const status = data.home;
     if (!status) {
