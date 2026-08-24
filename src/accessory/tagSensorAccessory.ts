@@ -6,6 +6,9 @@ import { NetatmoSecurityPlatform, NetatmoAccessory } from '../platform';
 // How long the vibration MotionSensor stays "detected" after a tag_small_move,
 // so HomeKit reliably fires the false->true notification edge.
 const VIBRATION_PULSE_MS = 10000;
+// Event polling is deliberately slower than door-state polling. Allow enough
+// time for an event just after one poll to still be considered fresh at the next.
+const VIBRATION_EVENT_MAX_AGE_SECONDS = 90;
 
 // A tag is only "reachable" when it reports a real door state. Anything else
 // (no_news = the tag stopped reporting, e.g. dead battery or out of range;
@@ -47,8 +50,8 @@ export class TagSensorAccessory implements NetatmoAccessory {
   // hold onto it so an unreachable tag keeps its last known state instead of
   // flipping to "closed".
   private lastKnownOpen = false;
-  // Previous reachability / low-battery, so we log transitions only (the poll
-  // loop runs every 15s and we don't want to spam on every tick).
+  // Previous reachability / low-battery, so we log transitions only (the door
+  // loop runs frequently and we don't want to spam on every tick).
   private reachable: boolean | undefined;
   private batteryLow: boolean | undefined;
   private batteryShapeWarned = false;
@@ -117,7 +120,7 @@ export class TagSensorAccessory implements NetatmoAccessory {
     this.contactService.addLinkedService(this.motionService);
   }
 
-  // Push fresh device data from the platform's single poll loop.
+  // Push fresh device data from the platform's door-state poll loop.
   update(device: any) {
     this.device = device;
     const C = this.platform.Characteristic;
@@ -157,8 +160,13 @@ export class TagSensorAccessory implements NetatmoAccessory {
       this.platform.log.error('Failed to update battery status', error);
     }
 
+  }
+
+  // Vibration data arrives independently from the platform's slower getevents
+  // loop, so failures there never interfere with contact-state updates.
+  updateEvents(lastSmallMove: number) {
     try {
-      this.handleVibration(device.lastSmallMove || 0);
+      this.handleVibration(lastSmallMove);
     } catch (error) {
       this.platform.log.error('Failed to update vibration sensor', error);
     }
@@ -232,7 +240,7 @@ export class TagSensorAccessory implements NetatmoAccessory {
     }
     const now = new Date().getTime() / 1000;
     const isNew = lastSmallMove > this.lastSmallMoveSeen;
-    const isRecent = lastSmallMove > now - 60;
+    const isRecent = lastSmallMove > now - VIBRATION_EVENT_MAX_AGE_SECONDS;
     this.lastSmallMoveSeen = lastSmallMove;
     if (isNew && isRecent) {
       this.pulseVibration();

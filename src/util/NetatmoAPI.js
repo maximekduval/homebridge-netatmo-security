@@ -202,8 +202,8 @@ export default class NetatmoAPI {
   }
 
   // The home structure (device list, names, types) is essentially static, so we
-  // fetch /homesdata once and cache it. This keeps the poll loop down to 2 API
-  // calls (homestatus + getevents) instead of 3, leaving room for a faster poll.
+  // Fetch /homesdata once and cache it. The recurring door and vibration loops
+  // can then call only their respective homestatus/getevents endpoints.
   async getHomeData(force = false) {
     if (this.homeStructure && !force) {
       return this.homeStructure;
@@ -243,24 +243,15 @@ export default class NetatmoAPI {
   async getHomeDevices() {
     const home = await this.getHomeData();
     const status = await this.getHomeStatus(home.id);
-    const events = await this.getEvents(home.id);
     const devices = [];
     home.modules.map((moduleInfo) => {
       const moduleStatus = status.modules.find((module) => moduleInfo.id === module.id);
-      const moduleEvents = events.filter((event) => moduleInfo.id === event.module_id);
-      const lastEventTime = (type) => {
-        const matching = moduleEvents.filter((event) => event.type === type);
-        return matching.length > 0 ? Math.max.apply(Math, matching.map((event) => event.time)) : 0;
-      };
       const device = { ...moduleStatus,
         name: moduleInfo.name,
         category: moduleInfo.category,
         setup_date: moduleInfo.setup_date,
         room_id: moduleInfo.room_id,
         home_id: home.id,
-        // tag_small_move = a light vibration/tap without opening (someone knocking);
-        // tag_big_move accompanies a normal open/close, so we don't surface it.
-        lastSmallMove: lastEventTime('tag_small_move'),
       };
       devices.push(device);
     });

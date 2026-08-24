@@ -4,25 +4,26 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { TagSensorAccessory } from './accessory/tagSensorAccessory';
 import NetatmoAPI from './util/NetatmoAPI';
 
-// Each accessory exposes update(device): the platform owns the single poll loop
-// and pushes fresh device data to accessories, instead of every accessory polling
-// its own timer.
+// Each accessory receives door/status data and vibration-event data separately.
+// The platform owns both centralized poll loops, instead of every accessory
+// polling with its own timers.
 export interface NetatmoAccessory {
   update(device: any): void;
+  updateEvents(lastSmallMove: number): void;
 }
 
 // The indoor siren (NIS) is intentionally not supported: Netatmo's API rejects
 // any state-setting property for it (error 21), so it can't be triggered from
 // HomeKit, and we don't expose an uncontrollable accessory.
 const SUPPORTED_TYPES = ['NACamDoorTag'];
-// homesdata is cached after first fetch (see NetatmoAPI.getHomeData), so each
-// poll costs 2 API calls (homestatus + getevents). Netatmo enforces ~500 req/h
-// per user and answers 429/503 once you cross it, so 15s (~480 req/h) left no
-// headroom at all: a single restart or a burst of retries tipped the account
-// over and it stayed banned. 20s is ~360 req/h, which keeps a real margin.
+// homesdata is cached after first fetch (see NetatmoAPI.getHomeData). Door states
+// use homestatus every 20s (~180 req/h), while the less time-sensitive vibration
+// events use getevents every 60s (~60 req/h). This keeps door updates responsive
+// while leaving ample headroom below Netatmo's ~500 req/h per-user quota.
 const DEFAULT_POLL_INTERVAL_MS = 20000;
-// Below this the account is back in rate-limit territory; refuse to go there
-// even if the config asks for it.
+const EVENT_POLL_INTERVAL_MS = 60000;
+// Keep a conservative lower bound so door-state polling stays responsive without
+// encouraging unnecessarily aggressive traffic.
 const MIN_POLL_INTERVAL_MS = 15000;
 const MAX_POLL_INTERVAL_MS = 300000;
 // When Netatmo fails, backing off is not just about log noise: hammering a
@@ -46,6 +47,9 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   private consecutiveFailures = 0;
   private lastFailureLogAt = 0;
   private pollTimer?: ReturnType<typeof setTimeout>;
+  private eventPollTimer?: ReturnType<typeof setTimeout>;
+  private eventPollingStarted = false;
+  private consecutiveEventFailures = 0;
   private readonly pollIntervalMs: number;
   // Unsupported modules are re-seen on every poll; log each one only once.
   private readonly skippedDevices = new Set<string>();
@@ -128,6 +132,32 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
     }
   }
 
+  // Vibration events come from a separate, less reliable Netatmo endpoint. Keep
+  // them out of the door-state refresh path so a getevents 503 cannot discard a
+  // homestatus response that was already successful.
+  async syncEvents() {
+    const home = await this.netatmoAPI.getHomeData();
+    const events = await this.netatmoAPI.getEvents(home.id);
+    const latestSmallMove = new Map<string, number>();
+
+    for (const event of events) {
+      if (event.type !== 'tag_small_move' || !event.module_id) {
+        continue;
+      }
+      const time = Number(event.time) || 0;
+      latestSmallMove.set(event.module_id, Math.max(latestSmallMove.get(event.module_id) ?? 0, time));
+    }
+
+    // Send 0 as well, so a tag with no historical small-move event is initialized
+    // and its first future event can produce a HomeKit notification.
+    for (const accessory of this.accessories) {
+      const deviceId = accessory.context.device?.id;
+      if (deviceId) {
+        this.handlers.get(accessory.UUID)?.updateEvents(latestSmallMove.get(deviceId) ?? 0);
+      }
+    }
+  }
+
   // The poll interval is configurable so a user whose account keeps getting
   // rate-limited (shared client_id, other integrations on the same account) can
   // trade latency for headroom without editing the plugin.
@@ -147,7 +177,8 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   // overlap with the next one, otherwise failing polls stack up and multiply the
   // request rate exactly when the API is already refusing calls.
   startRefreshTask() {
-    this.log.info(`Polling Netatmo every ${this.pollIntervalMs / 1000}s.`);
+    this.log.info(`Polling Netatmo door states every ${this.pollIntervalMs / 1000}s and vibration events every `
+      + `${EVENT_POLL_INTERVAL_MS / 1000}s.`);
     // First pass immediately: it doubles as device discovery, and it reschedules
     // itself (with backoff if it fails).
     this.runPoll();
@@ -175,6 +206,12 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
       this.consecutiveFailures = 0;
       this.lastFailureLogAt = 0;
       this.scheduleNextPoll(this.pollIntervalMs);
+      // Start only after the first successful device sync. This prevents the two
+      // endpoints racing each other during discovery/authentication at startup.
+      if (!this.eventPollingStarted) {
+        this.eventPollingStarted = true;
+        this.runEventPoll();
+      }
     } catch (error) {
       this.consecutiveFailures++;
       const delay = this.backoffDelay();
@@ -195,6 +232,34 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
     const factor = Math.pow(2, Math.min(this.consecutiveFailures - 1, 10));
     const base = Math.min(this.pollIntervalMs * factor, MAX_BACKOFF_MS);
     return Math.round(base * (0.8 + Math.random() * 0.4));
+  }
+
+  private scheduleNextEventPoll(delayMs: number) {
+    if (this.eventPollTimer) {
+      clearTimeout(this.eventPollTimer);
+    }
+    this.eventPollTimer = setTimeout(() => {
+      this.runEventPoll();
+    }, delayMs);
+    this.eventPollTimer.unref?.();
+  }
+
+  // getevents is supplementary: failures are kept at debug level, cached
+  // HomeKit door states remain untouched, and only this event loop backs off.
+  private async runEventPoll() {
+    let delay = EVENT_POLL_INTERVAL_MS;
+    try {
+      await this.syncEvents();
+      this.consecutiveEventFailures = 0;
+    } catch (error) {
+      this.consecutiveEventFailures++;
+      const factor = Math.pow(2, Math.min(this.consecutiveEventFailures - 1, 10));
+      const base = Math.min(EVENT_POLL_INTERVAL_MS * factor, MAX_BACKOFF_MS);
+      delay = Math.round(base * (0.8 + Math.random() * 0.4));
+      this.log.debug(`Failed to refresh Netatmo vibration events (${this.consecutiveEventFailures} consecutive `
+        + `failure(s), retrying in ${Math.round(delay / 1000)}s): ` + ((error as any)?.message ?? error));
+    }
+    this.scheduleNextEventPoll(delay);
   }
 
 }

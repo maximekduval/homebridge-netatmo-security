@@ -56,7 +56,7 @@
         "default": 20,
         "minimum": 15,
         "maximum": 300,
-        "description": "How often the plugin asks Netatmo for the tag states. Each poll costs 2 API calls and Netatmo allows about 500 per hour, so 20s (~360/h) leaves headroom. Raise it if you see repeated 429/503 errors in the logs (e.g. another integration shares the same Netatmo account)."
+        "description": "How often the plugin asks Netatmo for door states (default 20s). Vibration events are fetched separately every 60s. This uses about 240 calls/hour in total, below Netatmo's roughly 500 calls/hour per-account limit. Raise this interval if another integration shares the same Netatmo account."
       },
       "webhook_scheme": {
         "title": "Webhook Scheme",
