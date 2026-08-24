@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Netatmo Security MK",
   "name": "homebridge-netatmo-security-mk",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "HomeKit support for Netatmo Smart Door/Window Sensors (Tags): contact + vibration. Fork of Anzure/homebridge-netatmo-security.",
   "author": "maximekduval",
   "license": "Apache-2.0",
@@ -28,7 +28,7 @@
     "build": "rimraf ./dist && tsc",
     "clean": "rimraf ./dist",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run lint && npm run build && npm version patch -m 'Release %s'",
+    "prepublishOnly": "npm run lint && npm run build",
     "postpublish": "npm run clean"
   },
   "publishConfig": {
