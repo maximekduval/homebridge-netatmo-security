@@ -55,7 +55,7 @@ Restart Homebridge after setting up or making changes.
 ## Notes
 - Door states are polled every 20 seconds by default; expect up to ~20 s of latency (Netatmo offers no public push/webhook for these without exposing your bridge to the internet). The interval is configurable (**Poll Interval**, 15–300 s). Vibration events are fetched separately every 60 seconds.
 - The default intervals use about 240 Netatmo API calls/hour (180 `homestatus` + 60 `getevents`), leaving margin below the account budget of roughly 500 calls/hour. If the logs show repeated `429`/`503` (`Netatmo error 26: User usage reached`), raise the door poll interval and check whether another integration (Home Assistant, another bridge) polls the same account.
-- Door-state errors back off exponentially (up to 5 min) and repeated outage logs are throttled. A `getevents` failure only backs off vibration polling and is logged at debug level; it never prevents a successful door-state update.
+- Door-state errors back off exponentially (up to 5 min). One or two consecutive failures are logged only at debug level; the third surfaces an error, after which repeated outage logs are throttled. A `getevents` failure only backs off vibration polling and is logged at debug level; it never prevents a successful door-state update.
 - The "Vibration" motion sensor pulses for a few seconds on each detected tap so HomeKit reliably fires its notification.
 
 ## Credits

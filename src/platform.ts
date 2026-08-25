@@ -31,9 +31,10 @@ const MAX_POLL_INTERVAL_MS = 300000;
 const MAX_BACKOFF_MS = 300000;
 // Don't re-log the same ongoing outage more than once per this window.
 const FAILURE_LOG_INTERVAL_MS = 300000;
-// Blips of one or two failed polls are normal with Netatmo's cloud; only
-// announce a recovery when the outage was long enough to be worth mentioning.
-const RECOVERY_LOG_THRESHOLD = 3;
+// Blips of one or two failed polls are normal with Netatmo's cloud. Keep them at
+// debug level and only surface an outage (and its recovery) from the third
+// consecutive failure onward.
+const OUTAGE_LOG_THRESHOLD = 3;
 
 export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -198,7 +199,7 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
   private async runPoll() {
     try {
       await this.syncDevices();
-      if (this.consecutiveFailures >= RECOVERY_LOG_THRESHOLD) {
+      if (this.consecutiveFailures >= OUTAGE_LOG_THRESHOLD) {
         this.log.info(`Netatmo status refresh recovered after ${this.consecutiveFailures} failed attempt(s).`);
       } else if (this.consecutiveFailures > 0) {
         this.log.debug(`Netatmo status refresh recovered after ${this.consecutiveFailures} failed attempt(s).`);
@@ -216,10 +217,14 @@ export class NetatmoSecurityPlatform implements DynamicPlatformPlugin {
       this.consecutiveFailures++;
       const delay = this.backoffDelay();
       const now = Date.now();
-      if (this.consecutiveFailures === 1 || now - this.lastFailureLogAt >= FAILURE_LOG_INTERVAL_MS) {
+      const message = `Failed to refresh status (${this.consecutiveFailures} consecutive failures, `
+        + `retrying in ${Math.round(delay / 1000)}s): ` + ((error as any)?.message ?? error);
+      if (this.consecutiveFailures < OUTAGE_LOG_THRESHOLD) {
+        this.log.debug(message);
+      } else if (this.consecutiveFailures === OUTAGE_LOG_THRESHOLD
+        || now - this.lastFailureLogAt >= FAILURE_LOG_INTERVAL_MS) {
         this.lastFailureLogAt = now;
-        this.log.error(`Failed to refresh status (${this.consecutiveFailures} consecutive failures, `
-          + `retrying in ${Math.round(delay / 1000)}s): ` + ((error as any)?.message ?? error));
+        this.log.error(message);
       }
       this.scheduleNextPoll(delay);
     }
