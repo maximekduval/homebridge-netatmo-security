@@ -24,11 +24,12 @@
   ],
   "scripts": {
     "lint": "eslint src/**.ts --max-warnings=0",
+    "test": "node --test test/changelog-section.test.mjs",
     "watch": "npm run build && npm link && nodemon",
     "build": "rimraf ./dist && tsc",
     "clean": "rimraf ./dist",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run lint && npm run build",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
     "postpublish": "npm run clean"
   },
   "publishConfig": {
