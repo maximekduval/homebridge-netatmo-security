@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.20
+
+- Update `axios` from 0.25 to 1.20 and `form-data` to 4.0.6, which fixes the
+  known security issues of these dependencies (`npm audit` no longer reports
+  any). No change in behavior.
+
 ## 1.0.19
 
 - Keep one or two failed Netatmo status polls at debug level. An outage is
