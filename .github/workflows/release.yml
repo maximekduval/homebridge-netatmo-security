@@ -1,0 +1,75 @@
+name: Release
+
+# Stages the package on npm when a version tag such as v1.0.21 is pushed. The
+# staged version is not public until a maintainer approves it with 2FA, on
+# npmjs.com (package > Staged Packages) or with `npm stage approve`.
+#
+# Authentication uses npm trusted publishing (OIDC), so no npm token is stored
+# in GitHub. The trusted publisher is configured on npmjs.com, in the package
+# settings, for this repository and this workflow file name (release.yml) with
+# the stage-only permission: `npm publish` is refused and `npm stage publish`
+# is the only accepted command.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches package.json and is on master
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/master; then
+            echo "Tag ${GITHUB_REF_NAME} is not on master." >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # npm stage publish needs npm 11.15.0 or later, which Node 24 may not bundle.
+      - name: Update npm
+        run: npm install -g npm@^11.15.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      # prepack runs the type check, the tests and the build before packing.
+      - name: Stage the package on npm
+        run: npm stage publish
+
+      - name: Explain how to approve
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          {
+            echo "### ${GITHUB_REF_NAME} is staged on npm"
+            echo
+            echo "It is not public yet. Approve it with 2FA on npmjs.com (package > Staged Packages) or run:"
+            echo
+            echo '```'
+            echo "npm stage approve ${name}@${GITHUB_REF_NAME#v}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
