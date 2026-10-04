@@ -15,8 +15,20 @@
 
 ## 1.0.17
 
-- First version on npm with the changes of 1.0.16, which was tagged but not
-  published on npm. No code change.
+First version on npm since 1.0.15. It brings the changes of 1.0.16, which was
+not published on npm:
+
+- Back off on Netatmo API errors instead of hammering the account quota:
+  exponential backoff with jitter, up to 5 minutes, and at most one error line
+  every 5 minutes during an outage.
+- Poll every 20 s by default (about 360 calls per hour) and make the interval
+  configurable with **Poll Interval** (15 to 300 s). Polls never overlap.
+- Time out every Netatmo request after 10 s, including the token request.
+- Show Netatmo's own error message, for example
+  `error 26: User usage reached`, instead of a bare HTTP status.
+- Drop the access token on a 401 only, never on a 403 or 429 quota ban.
+- Recover on the next successful poll when the discovery fails at startup,
+  instead of needing a restart.
 
 ## 1.0.16
 
@@ -34,8 +46,11 @@
 
 ## 1.0.15
 
-- First version on npm with the changes of 1.0.14, which was not published on
-  npm. No code change.
+First version on npm since 1.0.13. It brings the change of 1.0.14, which was
+not published on npm:
+
+- Throttle the logs when Netatmo returns errors for a long time: the first
+  failure, then every 20th, then the recovery.
 
 ## 1.0.14
 
@@ -61,8 +76,13 @@
 
 ## 1.0.10
 
-- First version on npm with the changes of 1.0.9, which was not published on
-  npm. No code change.
+First version on npm since 1.0.8. It brings the changes of 1.0.9, which was not
+published on npm:
+
+- Show a door tag that stops reporting (dead battery, out of range) as not
+  responding in HomeKit, keeping its last known state, instead of "closed".
+- Add a Battery service to door tags, with the low-battery warning also shown
+  on the contact sensor.
 
 ## 1.0.9
 
