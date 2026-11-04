@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.21
+
+- Require `axios` 1.21, so that a new install also takes a `follow-redirects`
+  that fixes three advisories where credential headers could leak on a
+  cross-origin redirect (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c,
+  GHSA-mrwp-f3q8-3g9p). Update `nodemon` to 3 and `rimraf` to 6 (development
+  only). `npm audit` no longer reports any high issue. No change in behavior.
+
 ## 1.0.20
 
 - Update `axios` from 0.25 to 1.20 and `form-data` to 4.0.6, which fixes the
